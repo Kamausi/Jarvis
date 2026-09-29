@@ -1,0 +1,34 @@
+name: Deploy JARVIS to Firebase Hosting
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: firebase-hosting-production
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Stage existing application without modifying repository files
+        run: |
+          mkdir -p .hosting-stage
+          if [ -d Public ]; then cp -a Public/. .hosting-stage/; fi
+          if [ -d public ]; then cp -a public/. .hosting-stage/; fi
+          cp index.html .hosting-stage/index.html
+          node <<'NODE'
+          const fs = require('fs');
+          const config = JSON.parse(fs.readFileSync('firebase.json', 'utf8'));
+          config.hosting.public = '.hosting-stage';
+          fs.writeFileSync('firebase.json', JSON.stringify({hosting: config.hosting}, null, 2));
+          if (!fs.statSync('.hosting-stage/index.html').size) throw new Error('Empty application');
+          NODE
+      - name: Deploy live Hosting release
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          projectId: jarvis-67d2f
+          channelId: live

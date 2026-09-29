@@ -262,7 +262,7 @@ const BROWSER_MODEL='Qwen2.5-0.5B-Instruct-q4f16_1-MLC';
 const WASM_MODEL='onnx-community/Qwen2.5-0.5B-Instruct';
 const GPU_RUNTIME_URL='https://esm.run/@mlc-ai/web-llm@0.2.85'; // Not loaded in recovery build
 const CPU_RUNTIME_URL='https://esm.run/@huggingface/transformers@3.8.1';
-const JARVIS_BUILD='HTML recovery 2';
+const JARVIS_BUILD='HTML recovery 3 — CPU inference verification';
 const AI_INSTALL_MARKER='jarvis-ai-install-in-progress-v2';
 const AI_INSTALL_FAILURE='jarvis-ai-last-install-status-v2';
 const AI_SAFE_MODE='jarvis-ai-safe-mode-v2';
@@ -301,16 +301,31 @@ function createBrowserInference({
             onProgress('GPU inference unavailable. Trying CPU mode instead…');
           }
         }
-        onProgress('Loading CPU/WASM inference runtime and model. CPU responses can be slow…');
-        const runtime=await loadCpuRuntime();
-        if(typeof runtime?.pipeline!=='function')throw Error('CPU/WASM inference runtime is unavailable.');
-        const generator=await runtime.pipeline('text-generation',WASM_MODEL,{
-          dtype:'q8',
-          // Transformers.js uses CPU/WASM when the device parameter is omitted.
-          progress_callback:report=>onProgress(progressText(report,'Loading JARVIS CPU model'))
-        });
-        if(typeof generator!=='function')throw Error('CPU inference model did not initialize.');
+        onProgress('Connecting to the CPU inference runtime…');
+        let runtime;
+        try { runtime=await loadCpuRuntime(); }
+        catch(error){throw Error('CPU runtime download failed: '+String(error?.message||error));}
+        if(typeof runtime?.pipeline!=='function')throw Error('CPU inference runtime has no pipeline() function.');
+        onProgress('Downloading and initializing the CPU model…');
+        let generator;
+        try {
+          generator=await runtime.pipeline('text-generation',WASM_MODEL,{
+            device:'wasm',dtype:'q8',
+            progress_callback:report=>onProgress(progressText(report,'Downloading JARVIS CPU model'))
+          });
+        }catch(error){throw Error('CPU model initialization failed: '+String(error?.message||error));}
+        if(typeof generator!=='function')throw Error('CPU model did not initialize a usable generator.');
+        onProgress('Testing local AI inference…');
+        try {
+          const test=await generator([{role:'user',content:'Reply with READY.'}],{
+            max_new_tokens:12,do_sample:false
+          });
+          const generated=test?.[0]?.generated_text;
+          const reply=typeof generated==='string'?generated:Array.isArray(generated)?generated.at(-1)?.content:null;
+          if(typeof reply!=='string'||!reply.trim())throw Error('Model returned no text.');
+        }catch(error){throw Error('CPU model inference test failed: '+String(error?.message||error));}
         engine=generator;backend='browser-wasm';
+        onProgress('JARVIS AI initialized and verified.');
       })();
       try{await installing;}finally{installing=null;}
     },
@@ -656,7 +671,7 @@ function updateSyncUI() {
   browserPanel.hidden = mode!=='local';
   savedMemoryPanel.hidden = mode!=='local';
   installBrowserAI.disabled = busy || mode!=='local' || browserAI.status().loading;
-  installBrowserAI.textContent=browserAI.status().ready?'Resume JARVIS AI':'Install browser AI';
+  installBrowserAI.textContent=browserAI.status().ready?'Use JARVIS AI':'Install browser AI';
   $('modeBadge').textContent = mode === 'cloud' ? (cloudError ? '● CLOUD ERROR' : pendingWrites ? '● SYNCING' : '● CLOUD') : mode === 'local' ? '● LOCAL' : '● CONNECTING';
   $('taskStorageDetail').textContent = cloudReady ? 'Tracked in cloud' : mode === 'local' ? 'Tracked locally' : 'Cloud workspace loading';
   $('storageMode').textContent = cloudReady ? (cloudError ? 'Unsaved cloud draft' : 'Cloud workspace') : mode === 'local' ? 'Local browser' : 'Cloud unavailable';
@@ -854,12 +869,12 @@ function updateAI() {
     const status=browserAI.status();
     $('chatInstallAI').textContent=status.loading?'Installing JARVIS AI…'
       :status.ready&&pendingAIMessage&&active?'Retry last message'
-      :status.ready?'Resume JARVIS AI'
+      :status.ready?'Use JARVIS AI'
       :browserAIError?'Retry JARVIS AI installation':'Install JARVIS AI';
     $('chatInstallAI').disabled=busy||status.loading;
     $('chatAIStatus').textContent=status.loading?browserAIStatus.textContent
       :browserAIError?(status.ready?'Model inference failed: ':'Model installation failed: ')+browserAIError
-      :status.ready?'The local model is loaded. Resume it to answer your messages.'
+      :status.ready?'The local model passed its inference test and is ready.'
       :pendingAIMessage?'Your message is saved. Install JARVIS AI here and it will answer that message.'
       :location.protocol!=='https:'&&location.hostname!=='localhost'?'Downloaded HTML cannot safely install browser AI. Use an HTTPS-hosted JARVIS build. Local tasks and saved chat remain accessible.'
       :'CPU-only AI can be installed with approval. GPU loading is disabled after the previous Chrome crash.';
@@ -1109,7 +1124,7 @@ async function send(text) {
         pendingAIMessage=userMessage;
         replySource='unavailable';
         answer=browserAI.status().ready
-          ?'JARVIS AI is paused. Tap Resume JARVIS AI in Chat to answer this message.'
+          ?'JARVIS AI is paused. Tap Use JARVIS AI in Chat to answer this message.'
           :'The JARVIS language model has not been loaded. Tap Install JARVIS AI in Chat to download it and answer this message.';
       }
     }else answer=demoReply(clean)||'JARVIS cannot generate a reply in this workspace.';

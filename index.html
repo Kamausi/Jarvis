@@ -262,7 +262,7 @@ const BROWSER_MODEL='Qwen2.5-0.5B-Instruct-q4f16_1-MLC';
 const WASM_MODEL='onnx-community/Qwen2.5-0.5B-Instruct';
 const GPU_RUNTIME_URL='https://esm.run/@mlc-ai/web-llm@0.2.85'; // Not loaded in recovery build
 const CPU_RUNTIME_URL='https://esm.run/@huggingface/transformers@3.8.1';
-const JARVIS_BUILD='HTML recovery 3 — CPU inference verification';
+const JARVIS_BUILD='HTML recovery 4 — reduced CPU chat workload';
 const AI_INSTALL_MARKER='jarvis-ai-install-in-progress-v2';
 const AI_INSTALL_FAILURE='jarvis-ai-last-install-status-v2';
 const AI_SAFE_MODE='jarvis-ai-safe-mode-v2';
@@ -340,7 +340,7 @@ function createBrowserInference({
       });
       generating=true;
       try{
-        const prompt=[{role:'system',content:SYSTEM_PROMPT},...clean];
+        const prompt=[{role:'system',content:'You are JARVIS. Answer briefly and clearly.'},clean.at(-1)];
         if(backend==='browser-webgpu'){
           const result=await engine.chat.completions.create({messages:prompt,stream:true,temperature:0.65,max_tokens:384});
           for await(const packet of result){
@@ -348,7 +348,7 @@ function createBrowserInference({
             if(typeof content==='string'&&content)yield content;
           }
         }else{
-          const result=await engine(prompt,{max_new_tokens:256,do_sample:false});
+          const result=await engine(prompt,{max_new_tokens:48,do_sample:false});
           const generated=result?.[0]?.generated_text;
           const reply=typeof generated==='string'?generated:Array.isArray(generated)?generated.at(-1)?.content:null;
           if(typeof reply!=='string'||!reply.trim())throw Error('CPU model returned no text.');

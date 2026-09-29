@@ -23,6 +23,8 @@ jobs:
           const fs = require('fs');
           const config = JSON.parse(fs.readFileSync('firebase.json', 'utf8'));
           config.hosting.public = '.hosting-stage';
+          // Hosting-only release: keep the original backend configuration in git.
+          config.hosting.rewrites = (config.hosting.rewrites || []).filter(rule => !rule.run && !rule.function);
           fs.writeFileSync('firebase.json', JSON.stringify({hosting: config.hosting}, null, 2));
           if (!fs.statSync('.hosting-stage/index.html').size) throw new Error('Empty application');
           NODE
